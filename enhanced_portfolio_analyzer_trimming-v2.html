@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Portfolio Analyzer - v2.1 (Dynamic Target)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+        .sortable:hover {
+            background-color: #f3f4f6;
+        }
+        .sort-arrow {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            opacity: 0.5;
+        }
+        .sort-arrow.active {
+            opacity: 1;
+            color: #1D4ED8; /* Blue-700 */
+        }
+        .gain-positive {
+            color: #059669; /* Emerald-600 */
+            font-weight: 600;
+        }
+        .gain-negative {
+            color: #DC2626; /* Red-600 */
+            font-weight: 600;
+        }
+        .gain-neutral {
+            color: #6B7280; /* Gray-500 */
+        }
+        .max-height-scroll {
+            max-height: 85vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 p-4 sm:p-6">
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8 border-t-4 border-blue-600">
+            <h1 class="text-3xl font-extrabold text-gray-800 text-center mb-4">📈 Enhanced Portfolio Dashboard</h1>
+            <div class="text-center">
+                <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" class="mb-4 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                <div id="status" class="text-sm text-gray-600 mt-2">Upload your portfolio files (Excel/CSV) to begin analysis.</div>
+            </div>
+        </div>
+
+        <div id="summaryCards" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Total Value</div>
+                <div class="text-2xl font-bold text-blue-600" id="totalValue">$0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Holdings</div>
+                <div class="text-2xl font-bold text-gray-800" id="totalHoldings">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Cash Balance</div>
+                <div class="text-2xl font-bold text-emerald-600" id="cashAmount">$0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Invested Capital</div>
+                <div class="text-2xl font-bold text-indigo-600" id="investedAmount">$0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Total Gain</div>
+                <div class="text-2xl font-bold" id="totalGainPercent">0%</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 text-center transform hover:scale-105 transition duration-300">
+                <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Over Target (<span id="targetPercentLabel">5.0%</span>)</div>
+                <div class="text-2xl font-bold text-red-600" id="overweightCount">0</div>
+            </div>
+        </div>
+
+        <div id="chartsSection" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 mb-8">
+            <div class="bg-white rounded-xl shadow-lg p-6 lg:col-span-1">
+                <h3 class="text-lg font-bold mb-4 text-gray-700 border-b pb-2">Sector Allocation</h3>
+                <div class="h-64 flex items-center justify-center">
+                    <canvas id="sectorChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-lg p-6 lg:col-span-1">
+                <h3 class="text-lg font-bold mb-4 text-gray-700 border-b pb-2">Top 10 Holdings (Portfolio %)</h3>
+                <div class="h-64 flex items-center justify-center">
+                    <canvas id="holdingsChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg p-6 lg:col-span-1">
+                <h3 class="text-lg font-bold mb-4 text-gray-700 border-b pb-2">Holding Performance (Gain/Loss %)</h3>
+                <div class="h-64 flex items-center justify-center">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="controls" class="hidden bg-white rounded-xl shadow-md p-4 mb-6 sticky top-0 z-10 border-b border-gray-200">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                <input type="text" id="searchBox" placeholder="Search symbols or sectors..." 
+                       class="border border-gray-300 rounded-lg px-4 py-2 w-full md:w-64 focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                
+                <div class="flex items-center space-x-2 w-full md:w-auto justify-center">
+                    <label for="rebalanceTargetInput" class="text-sm font-medium text-gray-700 whitespace-nowrap">Target Max %:</label>
+                    <input type="number" id="rebalanceTargetInput" value="5.0" min="0.1" max="100" step="0.5"
+                           class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-center focus:ring-red-500 focus:border-red-500 transition duration-150 font-bold text-red-600">
+                </div>
+                
+                <div class="flex flex-wrap justify-center gap-3">
+                    <button id="resetSortBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-md">
+                        Reset Sort
+                    </button>
+                    <button id="rebalanceBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-md">
+                        📊 Rebalance Plan
+                    </button>
+                    <button id="exportBtn" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-md">
+                        Export to Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="holdingsSection" class="hidden bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="p-4 bg-gray-50 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-700">Detailed Holdings Table</h2>
+                <p class="text-sm text-gray-500 mt-1">Click column headers to sort, and watch out for the ⚠️ overweight flag.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-semibold sortable" data-column="symbol">
+                                Symbol <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-left font-semibold sortable" data-column="sector">
+                                Sector <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="quantity">
+                                Shares <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="costBasis">
+                                Cost Basis (Avg) <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="avgPrice">
+                                Current Price <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="value">
+                                Market Value <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="gainPercent">
+                                Gain % <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="percentage">
+                                Portfolio % <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-right font-semibold sortable" data-column="excessValue">
+                                Excess Over Target <span class="sort-arrow">↕</span>
+                            </th>
+                            <th class="px-4 py-3 text-left font-semibold sortable" data-column="brokers">
+                                Broker(s) <span class="sort-arrow">↕</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdingsTableBody" class="divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="rebalanceDashboard" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex justify-center items-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-3xl max-h-full overflow-y-auto max-height-scroll">
+                <div class="flex justify-between items-center mb-6 border-b pb-3">
+                    <h2 class="text-2xl font-bold text-red-700">🚨 Rebalancing Plan</h2>
+                    <button id="closeRebalanceBtn" class="text-gray-500 hover:text-gray-900 text-3xl font-light">×</button>
+                </div>
+                
+                <div class="mb-6">
+                    <h3 class="text-lg font-bold mb-3 text-red-600">Positions Over Target (<span id="rebalanceTargetDisplay">5.0%</span>)</h3>
+                    <div id="overweightSummary" class="space-y-3"></div>
+                </div>
+                
+                <div class="mb-6">
+                    <h3 class="text-lg font-bold mb-3 text-blue-600">Optimal Sell Plan</h3>
+                    <div id="sellPlan" class="space-y-4"></div>
+                </div>
+                
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 class="font-semibold mb-2 text-blue-800">💡 Strategy Notes:</h4>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                        <li>Positions are rebalanced to exactly the **Target Max %** of the total portfolio value.</li>
+                        <li>**Tax Efficiency:** Sells are prioritized from accounts with the **lowest gains** first.</li>
+                        <li>Broker abbreviations are used for clarity (e.g., FID, SCH, VAN).</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div id="errors" class="hidden mt-6 bg-red-100 border border-red-400 rounded-lg p-4 shadow-md">
+            <h3 class="font-bold text-red-800 mb-2">Processing Errors:</h3>
+            <ul id="errorList" class="text-red-700 text-sm list-disc list-inside"></ul>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+        let consolidatedData = [];
+        let charts = {};
+        let currentSort = { column: 'value', direction: 'desc' }; 
+        let filteredData = [];
+        let brokerShortNames = {};
+
+        // Simple sector mapping (can be expanded)
+        const sectorMap = {
+            'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'NVDA': 'Technology',
+            'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'JPM': 'Financial', 'BAC': 'Financial',
+            'HD': 'Consumer Discretionary', 'WMT': 'Consumer Staples', 'XOM': 'Energy', 'NEE': 'Utilities',
+            'BA': 'Industrial', 'AMT': 'Real Estate', 'LIN': 'Materials', 'T': 'Communication',
+            // ETFs and Cash
+            'SPY': 'ETF-Broad Market', 'QQQ': 'ETF-Tech/Growth', 'VTI': 'ETF-Broad Market', 'BND': 'Bonds',
+            'CASH': 'Cash', 'SPAXX': 'Cash', 'SWVXX': 'Cash'
+        };
+
+        function getSector(symbol) {
+            if (symbol === 'CASH' || symbol === 'SPAXX' || symbol === 'SWVXX') return 'Cash';
+            if (symbol.includes('ETF') || symbol.includes('QQQ')) return sectorMap[symbol] || 'ETF/Fund';
+            return sectorMap[symbol] || 'Other/Unknown';
+        }
+
+        function getTargetPercentage() {
+            const input = document.getElementById('rebalanceTargetInput');
+            let percentage = parseFloat(input.value);
+            
+            // Simple validation
+            if (isNaN(percentage) || percentage < 0.1 || percentage > 100) {
+                percentage = 5.0; // Default fallback
+                input.value = 5.0;
+            }
+            return percentage;
+        }
+
+        function findColumn(headers, keywords) {
+            for (let i = 0; i < headers.length; i++) {
+                const header = String(headers[i] || '').toLowerCase();
+                for (const keyword of keywords) {
+                    if (header.includes(keyword)) return i;
+                }
+            }
+            return -1;
+        }
+
+        async function processFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        
+                        let headers = null;
+                        let headerIndex = 0;
+                        for (let i = 0; i < Math.min(5, rows.length); i++) {
+                            const row = rows[i];
+                            if (row && row.length > 2 && findColumn(row, ['symbol', 'ticker']) >= 0) {
+                                headers = row;
+                                headerIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (!headers) {
+                            reject(new Error('Could not find standard headers (Symbol, Qty, Value) in file.'));
+                            return;
+                        }
+
+                        const symbolCol = findColumn(headers, ['symbol', 'ticker', 'security']);
+                        const qtyCol = findColumn(headers, ['quantity', 'shares', 'units']);
+                        const priceCol = findColumn(headers, ['price', 'last', 'current']);
+                        const valueCol = findColumn(headers, ['value', 'market value', 'total']);
+                        const costBasisCol = findColumn(headers, ['cost basis', 'cost', 'total cost', 'book value']);
+
+                        if (symbolCol === -1 || qtyCol === -1 || valueCol === -1) {
+                            reject(new Error('Missing core columns (Symbol, Quantity, or Value)'));
+                            return;
+                        }
+
+                        // Broker naming and abbreviation logic
+                        let broker = file.name.replace(/\.(xlsx?|csv)$/i, '', 'g').trim();
+                        broker = broker.length > 15 ? broker.substring(0, 15) + '...' : broker;
+                        let shortName = broker.substring(0, 3).toUpperCase();
+                        
+                        if (broker.toLowerCase().includes('fidelity')) { broker = 'Fidelity'; shortName = 'FID'; } 
+                        else if (broker.toLowerCase().includes('schwab')) { broker = 'Schwab'; shortName = 'SCH'; }
+                        else if (broker.toLowerCase().includes('vanguard')) { broker = 'Vanguard'; shortName = 'VAN'; }
+                        else if (broker.toLowerCase().includes('robinhood')) { broker = 'Robinhood'; shortName = 'ROB'; }
+                        
+                        brokerShortNames[broker] = shortName;
+
+                        const holdings = [];
+                        
+                        for (let i = headerIndex + 1; i < rows.length; i++) {
+                            const row = rows[i];
+                            if (!row) continue;
+
+                            let symbol = String(row[symbolCol] || '').trim().toUpperCase().split(' ')[0];
+                            if (!symbol || symbol.includes('TOTAL') || symbol.includes('SUB')) continue;
+
+                            if (symbol.includes('CASH') || symbol === 'SPAXX' || symbol === 'SWVXX') { symbol = 'CASH'; }
+
+                            const parseVal = (col) => parseFloat(String(row[col] || '0').replace(/[,$()]/g, '')) || 0;
+
+                            const qty = parseVal(qtyCol);
+                            const price = parseVal(priceCol);
+                            let value = parseVal(valueCol);
+                            const costBasis = costBasisCol >= 0 ? parseVal(costBasisCol) : 0;
+
+                            if (symbol === 'CASH' && value > 0) {
+                                holdings.push({
+                                    symbol: 'CASH', quantity: 1, price: value, value: value,
+                                    costBasis: value, broker: broker, sector: 'Cash'
+                                });
+                            } else if (qty > 0 && value > 0) {
+                                holdings.push({
+                                    symbol: symbol, quantity: qty, price: price || (value / qty), value: value,
+                                    costBasis: costBasis || value, broker: broker, sector: getSector(symbol)
+                                });
+                            }
+                        }
+
+                        resolve(holdings);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function consolidateData() {
+            const consolidated = {};
+            
+            allData.forEach(item => {
+                if (!consolidated[item.symbol]) {
+                    consolidated[item.symbol] = {
+                        symbol: item.symbol, quantity: 0, value: 0, costBasis: 0,
+                        brokers: [], brokerDetails: [], sector: item.sector
+                    };
+                }
+                
+                consolidated[item.symbol].quantity += item.quantity;
+                consolidated[item.symbol].value += item.value;
+                consolidated[item.symbol].costBasis += item.costBasis;
+                
+                if (!consolidated[item.symbol].brokers.includes(item.broker)) {
+                    consolidated[item.symbol].brokers.push(item.broker);
+                }
+                
+                consolidated[item.symbol].brokerDetails.push({
+                    broker: item.broker, quantity: item.quantity, value: item.value,
+                    costBasis: item.costBasis, price: item.price
+                });
+            });
+
+            Object.values(consolidated).forEach(item => {
+                item.avgPrice = item.quantity > 0 ? item.value / item.quantity : 0;
+                item.avgCostBasis = item.costBasis / item.quantity;
+                
+                if (item.costBasis > 0 && item.symbol !== 'CASH') {
+                    item.gainPercent = ((item.value - item.costBasis) / item.costBasis) * 100;
+                    item.totalGain = item.value - item.costBasis;
+                } else {
+                    item.gainPercent = 0;
+                    item.totalGain = 0;
+                }
+            });
+
+            return Object.values(consolidated).sort((a, b) => b.value - a.value);
+        }
+
+        function updateSummary() {
+            const target = getTargetPercentage();
+            const targetRatio = target / 100;
+            const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+            const totalCostBasis = consolidatedData.reduce((sum, item) => sum + item.costBasis, 0);
+            const cashItem = consolidatedData.find(item => item.symbol === 'CASH');
+            const cashValue = cashItem ? cashItem.value : 0;
+            const investedValue = totalValue - cashValue;
+            
+            const totalGainPercent = totalCostBasis > 0 ? ((totalValue - totalCostBasis) / totalCostBasis) * 100 : 0;
+            
+            // Overweight count uses the dynamic target
+            const overweightCount = consolidatedData.filter(item => {
+                const percentage = (item.value / totalValue) * 100;
+                return percentage > target && item.symbol !== 'CASH';
+            }).length;
+
+            // Update UI elements
+            document.getElementById('totalValue').textContent = `$${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            document.getElementById('totalHoldings').textContent = consolidatedData.length;
+            document.getElementById('cashAmount').textContent = `$${cashValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            document.getElementById('investedAmount').textContent = `$${investedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            document.getElementById('overweightCount').textContent = overweightCount;
+            document.getElementById('targetPercentLabel').textContent = target.toFixed(1) + '%';
+            
+            const gainElement = document.getElementById('totalGainPercent');
+            gainElement.textContent = `${totalGainPercent >= 0 ? '+' : ''}${totalGainPercent.toFixed(1)}%`;
+            gainElement.className = `text-2xl font-bold ${totalGainPercent >= 0 ? 'text-green-600' : 'text-red-600'}`;
+        }
+
+        function sortData(column, direction) {
+            const target = getTargetPercentage();
+            const targetRatio = target / 100;
+            
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            let dataToSort = consolidatedData.filter(item =>
+                item.symbol.toLowerCase().includes(searchTerm) ||
+                item.sector.toLowerCase().includes(searchTerm)
+            );
+
+            const sortedData = [...dataToSort].sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+                const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+                const targetValue = totalValue * targetRatio;
+
+                if (column === 'brokers') { aVal = a.brokers.join(', '); bVal = b.brokers.join(', '); } 
+                else if (column === 'percentage') { aVal = (a.value / totalValue) * 100; bVal = (b.value / totalValue) * 100; } 
+                else if (column === 'excessValue') { aVal = Math.max(0, a.value - targetValue); bVal = Math.max(0, b.value - targetValue); }
+                
+                if (['quantity', 'avgPrice', 'value', 'gainPercent', 'percentage', 'costBasis', 'avgCostBasis', 'excessValue', 'totalGain'].includes(column)) {
+                    aVal = parseFloat(aVal) || 0;
+                    bVal = parseFloat(bVal) || 0;
+                }
+                
+                if (direction === 'asc') {
+                    return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                } else {
+                    return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                }
+            });
+            
+            return sortedData;
+        }
+
+        function updateSortArrows(column, direction) {
+            document.querySelectorAll('.sort-arrow').forEach(arrow => {
+                arrow.textContent = '↕';
+                arrow.classList.remove('active');
+            });
+            
+            const activeArrow = document.querySelector(`[data-column="${column}"] .sort-arrow`);
+            if (activeArrow) {
+                activeArrow.textContent = direction === 'asc' ? '↑' : '↓';
+                activeArrow.classList.add('active');
+            }
+        }
+
+        function updateTable() {
+            const target = getTargetPercentage();
+            const targetRatio = target / 100;
+
+            // 1. Re-sort data based on currentSort and search filter
+            filteredData = sortData(currentSort.column, currentSort.direction);
+            
+            // 2. Calculate dynamic values
+            const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+            const targetValue = totalValue * targetRatio;
+            const tbody = document.getElementById('holdingsTableBody');
+            
+            // 3. Render table
+            tbody.innerHTML = filteredData.map(item => {
+                const percentage = ((item.value / totalValue) * 100).toFixed(1);
+                const excessValue = Math.max(0, item.value - targetValue);
+                const isOverweight = percentage > target && item.symbol !== 'CASH';
+                
+                let gainDisplay = '-';
+                let gainClass = 'gain-neutral';
+                if (item.symbol !== 'CASH') {
+                    if (item.gainPercent > 0) {
+                        gainDisplay = `+${item.gainPercent.toFixed(1)}%`;
+                        gainClass = 'gain-positive';
+                    } else if (item.gainPercent < 0) {
+                        gainDisplay = `${item.gainPercent.toFixed(1)}%`;
+                        gainClass = 'gain-negative';
+                    } else {
+                        gainDisplay = '0.0%';
+                        gainClass = 'gain-neutral';
+                    }
+                }
+                
+                let excessDisplay = '-';
+                let excessClass = '';
+                if (isOverweight) {
+                    excessDisplay = `$${excessValue.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+                    excessClass = 'text-red-600 font-bold';
+                }
+                
+                const rowClass = isOverweight ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50';
+                
+                return `
+                    <tr class="${rowClass}">
+                        <td class="px-4 py-3 font-semibold text-gray-800">
+                            ${item.symbol === 'CASH' ? '💵 CASH' : item.symbol}
+                            ${isOverweight ? ' ⚠️' : ''}
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="inline-block px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                                ${item.sector}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-right">${item.symbol === 'CASH' ? '-' : item.quantity.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>
+                        <td class="px-4 py-3 text-right">${item.symbol === 'CASH' ? '-' : '$' + item.avgCostBasis.toFixed(2)}</td>
+                        <td class="px-4 py-3 text-right">$${item.avgPrice.toFixed(2)}</td>
+                        <td class="px-4 py-3 text-right font-medium">$${item.value.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                        <td class="px-4 py-3 text-right ${gainClass}">${gainDisplay}</td>
+                        <td class="px-4 py-3 text-right font-bold ${isOverweight ? 'text-red-600' : 'text-blue-600'}">${percentage}%</td>
+                        <td class="px-4 py-3 text-right ${excessClass}">${excessDisplay}</td>
+                        <td class="px-4 py-3">${item.brokers.map(b => brokerShortNames[b] || b).join(', ')}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Combined function to update all dynamic elements when target changes
+        function updateAll() {
+            if (consolidatedData.length === 0) return;
+            updateSummary();
+            updateTable(); 
+            createCharts(); // Charts need updating as overweight coloring may change
+        }
+
+        function createCharts() {
+            const target = getTargetPercentage();
+            const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+            const nonCashData = consolidatedData.filter(item => item.symbol !== 'CASH');
+
+            // --- Chart 1: Sector Allocation (Doughnut Chart) ---
+            const sectorCtx = document.getElementById('sectorChart').getContext('2d');
+            if (charts.sector) charts.sector.destroy();
+            
+            const sectors = {};
+            consolidatedData.forEach(item => { sectors[item.sector] = (sectors[item.sector] || 0) + item.value; });
+            const sectorLabels = Object.keys(sectors);
+            const sectorValues = Object.values(sectors);
+            
+            charts.sector = new Chart(sectorCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: sectorLabels,
+                    datasets: [{
+                        data: sectorValues,
+                        backgroundColor: [ '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1', '#14B8A6', '#F97316' ],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10 } },
+                        tooltip: { callbacks: { label: function(context) {
+                            const percentage = ((context.raw / totalValue) * 100).toFixed(1);
+                            return `${context.label}: $${context.raw.toLocaleString(undefined, { maximumFractionDigits: 0 })} (${percentage}%)`;
+                        } } }
+                    }
+                }
+            });
+
+            // --- Chart 2: Top 10 Holdings (Horizontal Bar Chart) ---
+            const holdingsCtx = document.getElementById('holdingsChart').getContext('2d');
+            if (charts.holdings) charts.holdings.destroy();
+            
+            const top10 = nonCashData.slice(0, 10).sort((a, b) => b.value - a.value);
+            
+            charts.holdings = new Chart(holdingsCtx, {
+                type: 'bar',
+                data: {
+                    labels: top10.map(item => item.symbol),
+                    datasets: [{
+                        label: 'Portfolio %',
+                        data: top10.map(item => (item.value / totalValue * 100)),
+                        // Color based on the dynamic target
+                        backgroundColor: top10.map(item => (item.value / totalValue * 100) > target ? '#DC2626' : '#3B82F6')
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, indexAxis: 'y', 
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            min: 0,
+                            max: Math.max(target + 5, ...top10.map(item => (item.value / totalValue * 100)).map(v => Math.ceil(v / 5) * 5)), 
+                            title: { display: true, text: 'Portfolio Percentage (%)' },
+                            ticks: { callback: function(value) { return value + "%" } },
+                            // Add a line for the dynamic target
+                            afterBuildTicks: (axis) => {
+                                axis.ticks.push({ value: target, label: `${target.toFixed(1)}% Target` });
+                            }
+                        }
+                    }
+                }
+            });
+
+            // --- Chart 3: Performance (Gain/Loss %) (Horizontal Bar Chart) ---
+            const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+            if (charts.performance) charts.performance.destroy();
+            
+            const top10Performance = nonCashData.slice(0, 10).sort((a, b) => b.value - a.value); 
+            
+            charts.performance = new Chart(performanceCtx, {
+                type: 'bar',
+                data: {
+                    labels: top10Performance.map(item => item.symbol),
+                    datasets: [{
+                        label: 'Gain/Loss %',
+                        data: top10Performance.map(item => item.gainPercent),
+                        backgroundColor: top10Performance.map(item => item.gainPercent >= 0 ? '#059669' : '#DC2626')
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, indexAxis: 'y', 
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            position: 'bottom',
+                            title: { display: true, text: 'Percentage Gain/Loss (%)' },
+                            ticks: { callback: function(value) { return value + "%" } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function exportData() {
+            const target = getTargetPercentage();
+            const targetRatio = target / 100;
+            const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+            const targetValue = totalValue * targetRatio;
+            
+            const exportData = consolidatedData.map(item => {
+                const percentage = (item.value / totalValue) * 100;
+                const excessValue = Math.max(0, item.value - targetValue);
+                
+                return {
+                    Symbol: item.symbol,
+                    Sector: item.sector,
+                    Shares: item.quantity,
+                    'Cost Basis (Avg)': item.avgCostBasis.toFixed(2),
+                    'Current Price': item.avgPrice.toFixed(2),
+                    'Market Value': item.value.toFixed(2),
+                    'Gain/Loss ($)': item.symbol === 'CASH' ? 0 : item.totalGain.toFixed(2),
+                    'Gain %': item.symbol === 'CASH' ? 'N/A' : item.gainPercent.toFixed(2) + '%',
+                    'Portfolio %': percentage.toFixed(2) + '%',
+                    // Use dynamic target in export
+                    [`Excess Over ${target.toFixed(1)}%`]: percentage > target && item.symbol !== 'CASH' ? excessValue.toFixed(2) : 'N/A',
+                    Brokers: item.brokers.join(', ')
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Portfolio Analysis');
+            XLSX.writeFile(wb, 'enhanced_portfolio.xlsx');
+        }
+
+        function calculateRebalancePlan() {
+            const target = getTargetPercentage();
+            const targetRatio = target / 100;
+            const totalValue = consolidatedData.reduce((sum, item) => sum + item.value, 0);
+            const targetValue = totalValue * targetRatio;
+            
+            // Find overweight positions using the dynamic target
+            const overweightPositions = consolidatedData.filter(item => {
+                const percentage = (item.value / totalValue) * 100;
+                return percentage > target && item.symbol !== 'CASH';
+            }).map(item => {
+                const percentage = (item.value / totalValue) * 100;
+                const excessValue = item.value - targetValue;
+                const sharesToSell = excessValue / item.avgPrice;
+                
+                return { ...item, percentage, excessValue, sharesToSell, targetValue };
+            }).sort((a, b) => b.excessValue - a.excessValue);
+            
+            const sellPlans = overweightPositions.map(position => {
+                const brokerHoldings = position.brokerDetails.map(detail => ({
+                    ...detail,
+                    gainPercent: detail.costBasis > 0 ? ((detail.value - detail.costBasis) / detail.costBasis) * 100 : 0,
+                    shortName: brokerShortNames[detail.broker] || detail.broker.substring(0, 3).toUpperCase()
+                })).sort((a, b) => a.gainPercent - b.gainPercent); // Sort by lowest gain first
+                
+                let remainingToSell = position.excessValue;
+                const sellActions = [];
+                
+                for (const holding of brokerHoldings) {
+                    if (remainingToSell <= 0) break;
+                    
+                    const sellFromThis = Math.min(remainingToSell, holding.value);
+                    const sharesToSell = sellFromThis / position.avgPrice;
+                    
+                    sellActions.push({
+                        broker: holding.broker, shortName: holding.shortName,
+                        shares: sharesToSell, value: sellFromThis, gainPercent: holding.gainPercent
+                    });
+                    
+                    remainingToSell -= sellFromThis;
+                }
+                
+                return {
+                    symbol: position.symbol, currentPercent: position.percentage,
+                    excessValue: position.excessValue, totalSharesToSell: position.sharesToSell,
+                    sellActions
+                };
+            });
+            
+            return { overweightPositions, sellPlans, target };
+        }
+
+        function displayRebalancePlan() {
+            const { overweightPositions, sellPlans, target } = calculateRebalancePlan();
+            
+            document.getElementById('rebalanceTargetDisplay').textContent = target.toFixed(1) + '%';
+            
+            const summaryDiv = document.getElementById('overweightSummary');
+            if (overweightPositions.length === 0) {
+                summaryDiv.innerHTML = '<p class="text-gray-600">✅ No positions exceed the ' + target.toFixed(1) + '% target limit. Your portfolio is currently balanced!</p>';
+            } else {
+                summaryDiv.innerHTML = overweightPositions.map(pos => `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="font-bold text-lg">${pos.symbol}</span>
+                                <span class="text-gray-600 ml-2 text-sm">(${pos.sector})</span>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-red-700 font-bold">${pos.percentage.toFixed(2)}%</div>
+                                <div class="text-xs text-gray-500">Target: ${target.toFixed(2)}%</div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-sm text-gray-700">
+                            Reduce by: <span class="text-red-600 font-bold">$${pos.excessValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                            (Approx. ${pos.sharesToSell.toFixed(2)} shares)
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            const sellPlanDiv = document.getElementById('sellPlan');
+            if (sellPlans.length === 0) {
+                sellPlanDiv.innerHTML = '<p class="text-gray-600">No sell actions are required at this time.</p>';
+            } else {
+                sellPlanDiv.innerHTML = sellPlans.map(plan => `
+                    <div class="bg-white border border-blue-200 rounded-lg p-4 shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-bold text-xl">${plan.symbol}</h4>
+                            <div class="text-right">
+                                <div class="text-sm text-gray-600">Total Shares to Sell</div>
+                                <div class="font-bold text-blue-600">${plan.totalSharesToSell.toFixed(2)}</div>
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            ${plan.sellActions.map(action => `
+                                <div class="flex justify-between items-center bg-gray-50 p-3 rounded">
+                                    <div>
+                                        <span class="inline-block px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-mono font-semibold">
+                                            ${action.shortName}
+                                        </span>
+                                        <span class="text-sm text-gray-600 ml-2">(${action.broker})</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="font-semibold">${action.shares.toFixed(2)} shares</div>
+                                        <div class="text-sm text-gray-600">$${action.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                        <div class="text-xs ${action.gainPercent >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                            ${action.gainPercent >= 0 ? '+' : ''}${action.gainPercent.toFixed(1)}% gain (Lowest gain prioritized)
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            document.getElementById('rebalanceDashboard').classList.remove('hidden');
+        }
+
+        async function handleFiles(files) {
+            const status = document.getElementById('status');
+            const errors = document.getElementById('errorList');
+            
+            status.textContent = 'Processing files... Please wait.';
+            allData = [];
+            errors.innerHTML = '';
+            document.getElementById('errors').classList.add('hidden');
+
+            for (const file of files) {
+                try {
+                    const holdings = await processFile(file);
+                    allData.push(...holdings);
+                    status.textContent += ` ✓ ${file.name}`;
+                } catch (error) {
+                    const li = document.createElement('li');
+                    li.textContent = `${file.name}: ${error.message}`;
+                    errors.appendChild(li);
+                    document.getElementById('errors').classList.remove('hidden');
+                }
+            }
+
+            if (allData.length > 0) {
+                consolidatedData = consolidateData();
+                
+                // Initial setup and display
+                currentSort = { column: 'value', direction: 'desc' };
+                updateSortArrows(currentSort.column, currentSort.direction);
+                updateAll(); // Update summary, table, and charts
+                
+                document.getElementById('summaryCards').classList.remove('hidden');
+                document.getElementById('controls').classList.remove('hidden');
+                document.getElementById('holdingsSection').classList.remove('hidden');
+                document.getElementById('chartsSection').classList.remove('hidden');
+                
+                status.textContent = `✅ Analysis Complete: Loaded ${allData.length} positions, consolidated to ${consolidatedData.length} unique holdings.`;
+            }
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                handleFiles(Array.from(e.target.files));
+            }
+        });
+
+        document.getElementById('searchBox').addEventListener('input', function() {
+            updateTable(); 
+        });
+        
+        // NEW: Event listener for rebalance target input
+        document.getElementById('rebalanceTargetInput').addEventListener('change', function() {
+            updateAll(); 
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', exportData);
+        document.getElementById('rebalanceBtn').addEventListener('click', displayRebalancePlan);
+        document.getElementById('closeRebalanceBtn').addEventListener('click', function() {
+            document.getElementById('rebalanceDashboard').classList.add('hidden');
+        });
+
+        document.querySelectorAll('.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                const column = this.getAttribute('data-column');
+                let direction = 'desc';
+                
+                if (currentSort.column === column) {
+                    direction = currentSort.direction === 'desc' ? 'asc' : 'desc';
+                }
+                
+                currentSort = { column, direction };
+                updateSortArrows(column, direction);
+                updateTable();
+            });
+        });
+
+        document.getElementById('resetSortBtn').addEventListener('click', function() {
+            currentSort = { column: 'value', direction: 'desc' };
+            document.getElementById('searchBox').value = '';
+            updateSortArrows('value', 'desc');
+            updateTable();
+        });
+    </script>
+</body>
+</html>
